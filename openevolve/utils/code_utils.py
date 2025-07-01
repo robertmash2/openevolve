@@ -5,6 +5,86 @@ Utilities for code parsing, diffing, and manipulation
 import re
 from typing import Dict, List, Optional, Tuple, Union
 
+def inspect_strings(s1, s2):
+    """
+    Compares two strings character by character, printing their
+    ASCII/Unicode ordinal values to find the first difference.
+    """
+    print(f"String 1: '{s1}'")
+    print(f"String 2: '{s2}'")
+    print("-" * 40)
+    print("Index | Char 1 (Ord) | Char 2 (Ord)")
+    print("------|--------------|--------------")
+
+    # Find the length of the longer string to iterate through
+    max_len = max(len(s1), len(s2))
+    
+    # Iterate through the strings
+    for i in range(max_len):
+        # Get characters and their ordinal values, handle different lengths
+        char1 = s1[i] if i < len(s1) else " "
+        ord1 = ord(char1) if i < len(s1) else "N/A"
+        
+        char2 = s2[i] if i < len(s2) else " "
+        ord2 = ord(char2) if i < len(s2) else "N/A"
+
+        # Check for differences and print
+        diff_marker = ">>" if char1 != char2 else "  "
+        print(f"{diff_marker} {i:<4} | '{char1}' ({ord1:<6}) | '{char2}' ({ord2:<6})")
+
+        # Stop after finding the first difference to keep output clean
+        if char1 != char2:
+            print("-" * 40)
+            print(f"Difference found at index {i}.")
+            return
+
+    print("-" * 40)
+    print("No difference found (but lengths might differ if one is a prefix of the other).")
+
+
+def print_diff(string1, string2):
+    import difflib
+       
+    # The strings need to be split into lists of lines
+    lines1 = string1.splitlines()
+    lines2 = string2.splitlines()
+    
+    # Create a diff generator
+    diff = difflib.unified_diff(
+        lines1, 
+        lines2, 
+        fromfile='original', 
+        tofile='modified', 
+        lineterm=''
+    )
+    
+    # Print the differences
+    for line in diff:
+        print(line)
+
+def enforce_evolve_block(child_code: str, initial_program_code: str) -> str:
+    child_start = child_code.find("# EVOLVE-BLOCK-START")
+    child_end = child_code.find("# EVOLVE-BLOCK-END") + len("# EVOLVE-BLOCK-END")
+
+    initial_start = initial_program_code.find("# EVOLVE-BLOCK-START")
+    initial_end = initial_program_code.find("# EVOLVE-BLOCK-END") + len("# EVOLVE-BLOCK-END")
+    
+    if child_code[:child_start] == initial_program_code[:initial_start]:
+        print('pre-evolve-block matches.')
+    else:
+        print('pre-evolve-block MIS-MATCH')
+        print_diff(initial_program_code[:initial_start], child_code[:child_start])
+   
+    if child_code[child_end:] == initial_program_code[initial_end:]:
+        print('post-evolve-block matches.')
+    else:
+
+        print('post-evolve-block MIS-MATCH')       
+        print_diff(initial_program_code[initial_end:], child_code[child_end:])
+  
+    output = initial_program_code[:initial_start] + child_code[child_start:child_end] + initial_program_code[initial_end:]
+
+    return output
 
 def parse_evolve_blocks(code: str) -> List[Tuple[int, int, str]]:
     """
@@ -16,6 +96,7 @@ def parse_evolve_blocks(code: str) -> List[Tuple[int, int, str]]:
     Returns:
         List of tuples (start_line, end_line, block_content)
     """
+    
     lines = code.split("\n")
     blocks = []
 

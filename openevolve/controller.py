@@ -24,6 +24,7 @@ from openevolve.utils.code_utils import (
     format_diff_summary,
     parse_evolve_blocks,
     parse_full_rewrite,
+    enforce_evolve_block,
 )
 from openevolve.utils.format_utils import (
     format_metrics_safe,
@@ -127,8 +128,10 @@ class OpenEvolve:
             logger.debug(f"Generated LLM seed: {llm_seed}")
 
         # Load initial program
+        
         self.initial_program_path = initial_program_path
         self.initial_program_code = self._load_initial_program()
+        #self.initial_code_blocks = parse_evolve_blocks(self.initial_program_code)a
         self.language = extract_code_language(self.initial_program_code)
 
         # Extract file extension from initial program
@@ -173,7 +176,6 @@ class OpenEvolve:
         # Set up root logger
         root_logger = logging.getLogger()
         root_logger.setLevel(getattr(logging, self.config.log_level))
-
         # Add file handler
         log_file = os.path.join(log_dir, f"openevolve_{time.strftime('%Y%m%d_%H%M%S')}.log")
         file_handler = logging.FileHandler(log_file)
@@ -276,7 +278,7 @@ class OpenEvolve:
 
             # Sample parent and inspirations from current island
             parent, inspirations = self.database.sample()
-
+            #import pdb; pdb.set_trace()
             # Get artifacts for the parent program if available
             parent_artifacts = self.database.get_artifacts(parent.id)
 
@@ -297,14 +299,15 @@ class OpenEvolve:
                 diff_based_evolution=self.config.diff_based_evolution,
                 program_artifacts=parent_artifacts if parent_artifacts else None,
             )
-
+            
             # Generate code modification
             try:
                 llm_response = await self.llm_ensemble.generate_with_context(
                     system_message=prompt["system"],
                     messages=[{"role": "user", "content": prompt["user"]}],
                 )
-
+                #import pdb; pdb.set_trace()
+                #print(llm_response.replace('\\n', '\n'))
                 # Parse the response
                 if self.config.diff_based_evolution:
                     diff_blocks = extract_diffs(llm_response)
@@ -315,6 +318,7 @@ class OpenEvolve:
 
                     # Apply the diffs
                     child_code = apply_diff(parent.code, llm_response)
+                    child_code = enforce_evolve_block(child_code, self.initial_program_code) 
                     changes_summary = format_diff_summary(diff_blocks)
                 else:
                     # Parse full rewrite

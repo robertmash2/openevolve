@@ -7,7 +7,7 @@ import logging
 import time
 from typing import Any, Dict, List, Optional, Union
 
-import openai
+from openai import AzureOpenAI
 
 from openevolve.config import LLMConfig
 from openevolve.llm.base import LLMInterface
@@ -22,6 +22,7 @@ class OpenAILLM(LLMInterface):
         self,
         model_cfg: Optional[dict] = None,
     ):
+        
         self.model = model_cfg.name
         self.system_message = model_cfg.system_message
         self.temperature = model_cfg.temperature
@@ -34,12 +35,13 @@ class OpenAILLM(LLMInterface):
         self.api_key = model_cfg.api_key
         self.random_seed = getattr(model_cfg, 'random_seed', None)
 
+        key_to_use = self.api_key if self.api_key is not None else "noapi"
         # Set up API client
-        self.client = openai.OpenAI(
-            api_key=self.api_key,
-            base_url=self.api_base,
+        self.client = AzureOpenAI(
+            api_key=key_to_use,
+            api_version="2024-02-15-preview",
+            azure_endpoint=self.api_base  
         )
-
         logger.info(f"Initialized OpenAI LLM with model: {self.model}")
 
     async def generate(self, prompt: str, **kwargs) -> str:
@@ -67,8 +69,7 @@ class OpenAILLM(LLMInterface):
                 "max_completion_tokens": kwargs.get("max_tokens", self.max_tokens),
             }
         else:
-            params = {
-                "model": self.model,
+            params = {                
                 "messages": formatted_messages,
                 "temperature": kwargs.get("temperature", self.temperature),
                 "top_p": kwargs.get("top_p", self.top_p),
@@ -112,16 +113,21 @@ class OpenAILLM(LLMInterface):
                 else:
                     logger.error(f"All {retries + 1} attempts failed with error: {str(e)}")
                     raise
-
     async def _call_api(self, params: Dict[str, Any]) -> str:
         """Make the actual API call"""
+        # For this Azure proxy, the model name in config is 'azure/deployment-name'.
+        # The openai library misinterprets the '/', so we pass only the deployment name.
+        deployment_name = self.model.split('/')[-1] if '/' in self.model else self.model
+
         # Use asyncio to run the blocking API call in a thread pool
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
-            None, lambda: self.client.chat.completions.create(**params)
+            None, lambda: self.client.chat.completions.create(model=deployment_name, **params)
         )
         # Logging of system prompt, user message and response content
         logger = logging.getLogger(__name__)
+        # For debugging, let's log the actual deployment name used
+        logger.debug(f"API call with deployment_name: {deployment_name}")
         logger.debug(f"API parameters: {params}")
         logger.debug(f"API response: {response.choices[0].message.content}")
         return response.choices[0].message.content

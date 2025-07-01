@@ -12,7 +12,7 @@ from openevolve.utils.format_utils import format_metrics_safe
 from openevolve.utils.metrics_utils import safe_numeric_average
 
 logger = logging.getLogger(__name__)
-
+MAX_CODE_LEN=50
 
 class PromptSampler:
     """Generates prompts for code evolution"""
@@ -309,7 +309,7 @@ class PromptSampler:
             # Extract a snippet (first 10 lines) for display
             program_code = program.get("code", "")
             program_snippet = "\n".join(program_code.split("\n")[:10])
-            if len(program_code.split("\n")) > 10:
+            if len(program_code.split("\n")) > MAX_CODE_LEN:
                 program_snippet += "\n# ... (truncated for brevity)"
 
             # Calculate a composite score using safe numeric average
@@ -362,7 +362,7 @@ class PromptSampler:
                     # Extract a snippet (first 5 lines for diversity)
                     program_code = program.get("code", "")
                     program_snippet = "\n".join(program_code.split("\n")[:5])
-                    if len(program_code.split("\n")) > 5:
+                    if len(program_code.split("\n")) > MAX_CODE_LEN:
                         program_snippet += "\n# ... (truncated)"
 
                     # Calculate a composite score using safe numeric average
@@ -430,7 +430,7 @@ class PromptSampler:
             # Extract a snippet (first 8 lines) for display
             program_code = program.get("code", "")
             program_snippet = "\n".join(program_code.split("\n")[:8])
-            if len(program_code.split("\n")) > 8:
+            if len(program_code.split("\n")) > MAX_CODE_LEN:
                 program_snippet += "\n# ... (truncated for brevity)"
             
             # Calculate a composite score using safe numeric average
