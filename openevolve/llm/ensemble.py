@@ -9,9 +9,20 @@ from typing import Dict, List, Optional, Tuple
 
 from openevolve.llm.base import LLMInterface
 from openevolve.llm.openai import OpenAILLM
+from openevolve.llm.azure_openai import AzureOpenAILLM
 from openevolve.config import LLMModelConfig
 
 logger = logging.getLogger(__name__)
+
+
+def create_llm(config: LLMModelConfig) -> LLMInterface:
+    """Create an LLM instance based on the model name"""
+    
+    model = config.name
+    if 'azure' in model:
+        return AzureOpenAILLM(config)
+    else:
+        return OpenAILLM(config)
 
 
 class LLMEnsemble:
@@ -19,9 +30,13 @@ class LLMEnsemble:
 
     def __init__(self, models_cfg: List[LLMModelConfig]):
         self.models_cfg = models_cfg
-
+        
         # Initialize models from the configuration
-        self.models = [OpenAILLM(model_cfg) for model_cfg in models_cfg]
+        self.models = [create_llm(model) for model in self.models_cfg]
+        #for model in self.models_cfg:
+        #    self.models.append(create_llm(model))
+        #self.primary_model = create_llm(config, config.primary_model)
+        #self.secondary_model = create_llm(config, config.secondary_model)
 
         # Extract and normalize model weights
         self.weights = [model.weight for model in models_cfg]
