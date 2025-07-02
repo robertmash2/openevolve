@@ -7,6 +7,8 @@ WORKDIR /app
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    vim-gtk3 \
+    swig \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the project files into the container
@@ -14,6 +16,7 @@ COPY . /app
 
 # Install Python dependencies
 RUN pip install --root-user-action=ignore -e .
+RUN pip install pandas matplotlib scipy gymnasium[box2d] 
 
 # Expose the project directory as a volume
 VOLUME ["/app"]

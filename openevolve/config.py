@@ -18,6 +18,7 @@ class LLMModelConfig:
     api_base: str = None
     api_key: Optional[str] = None
     name: str = None
+    deployment_name: Optional[str] = None
 
     # Weight for model in ensemble
     weight: float = 1.0

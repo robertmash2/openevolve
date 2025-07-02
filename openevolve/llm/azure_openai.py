@@ -7,7 +7,7 @@ import logging
 import time
 from typing import Any, Dict, List, Optional, Union
 
-import openai
+from openai import AzureOpenAI
 
 from openevolve.config import LLMConfig
 from openevolve.llm.base import LLMInterface
@@ -15,16 +15,15 @@ from openevolve.llm.base import LLMInterface
 logger = logging.getLogger(__name__)
 
 
-class OpenAILLM(LLMInterface):
+class AzureOpenAILLM(LLMInterface):
     """LLM interface using OpenAI-compatible APIs"""
 
     def __init__(
         self,
         model_cfg: Optional[dict] = None,
     ):
+        
         self.model = model_cfg.name
-        # Look for an optional, explicit deployment name in the config
-        self.deployment_name = getattr(model_cfg, 'deployment_name', None)
         self.system_message = model_cfg.system_message
         self.temperature = model_cfg.temperature
         self.top_p = model_cfg.top_p
@@ -37,12 +36,12 @@ class OpenAILLM(LLMInterface):
         self.random_seed = getattr(model_cfg, 'random_seed', None)
 
         key_to_use = self.api_key if self.api_key is not None else "noapi"
-
-        self.client = openai.OpenAI(
+        # Set up API client
+        self.client = AzureOpenAI(
             api_key=key_to_use,
-            base_url=self.api_base,
+            api_version="2024-02-15-preview",
+            azure_endpoint=self.api_base  
         )
-
         logger.info(f"Initialized OpenAI LLM with model: {self.model}")
 
     async def generate(self, prompt: str, **kwargs) -> str:
@@ -57,20 +56,39 @@ class OpenAILLM(LLMInterface):
         self, system_message: str, messages: List[Dict[str, str]], **kwargs
     ) -> str:
         """Generate text using a system message and conversational context"""
+        # Prepare messages with system message
         formatted_messages = [{"role": "system", "content": system_message}]
         formatted_messages.extend(messages)
 
-        params = {
-            "messages": formatted_messages,
-            "temperature": kwargs.get("temperature", self.temperature),
-            "top_p": kwargs.get("top_p", self.top_p),
-            "max_tokens": kwargs.get("max_tokens", self.max_tokens),
-        }
-
+        # Set up generation parameters
+        if self.api_base == "https://api.openai.com/v1" and str(self.model).lower().startswith("o"):
+            # For o-series models
+            params = {
+                "model": self.model,
+                "messages": formatted_messages,
+                "max_completion_tokens": kwargs.get("max_tokens", self.max_tokens),
+            }
+        else:
+            params = {                
+                "messages": formatted_messages,
+                "temperature": kwargs.get("temperature", self.temperature),
+                "top_p": kwargs.get("top_p", self.top_p),
+                "max_tokens": kwargs.get("max_tokens", self.max_tokens),
+            }
+        
+        # Add seed parameter for reproducibility if configured
+        # Skip seed parameter for Google AI Studio endpoint as it doesn't support it
         seed = kwargs.get("seed", self.random_seed)
         if seed is not None:
-            params["seed"] = seed
+            if self.api_base == "https://generativelanguage.googleapis.com/v1beta/openai/":
+                logger.warning(
+                    "Skipping seed parameter as Google AI Studio endpoint doesn't support it. "
+                    "Reproducibility may be limited."
+                )
+            else:
+                params["seed"] = seed
 
+        # Attempt the API call with retries
         retries = kwargs.get("retries", self.retries)
         retry_delay = kwargs.get("retry_delay", self.retry_delay)
         timeout = kwargs.get("timeout", self.timeout)
@@ -79,29 +97,37 @@ class OpenAILLM(LLMInterface):
             try:
                 response = await asyncio.wait_for(self._call_api(params), timeout=timeout)
                 return response
+            except asyncio.TimeoutError:
+                if attempt < retries:
+                    logger.warning(f"Timeout on attempt {attempt + 1}/{retries + 1}. Retrying...")
+                    await asyncio.sleep(retry_delay)
+                else:
+                    logger.error(f"All {retries + 1} attempts failed with timeout")
+                    raise
             except Exception as e:
                 if attempt < retries:
-                    logger.warning(f"Error on attempt {attempt + 1}/{retries + 1}: {str(e)}. Retrying...")
+                    logger.warning(
+                        f"Error on attempt {attempt + 1}/{retries + 1}: {str(e)}. Retrying..."
+                    )
                     await asyncio.sleep(retry_delay)
                 else:
                     logger.error(f"All {retries + 1} attempts failed with error: {str(e)}")
                     raise
-
     async def _call_api(self, params: Dict[str, Any]) -> str:
         """Make the actual API call"""
-        
-        # Use the explicit deployment_name from config if it exists.
-        # Otherwise, fall back to the full model name.
-        model_to_send = self.deployment_name if self.deployment_name else self.model
-        
-        logger.debug(f"Attempting API call with model: '{model_to_send}'")
+        # For this Azure proxy, the model name in config is 'azure/deployment-name'.
+        # The openai library misinterprets the '/', so we pass only the deployment name.
+        deployment_name = self.model.split('/')[-1] if '/' in self.model else self.model
 
+        # Use asyncio to run the blocking API call in a thread pool
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
-            None, lambda: self.client.chat.completions.create(model=model_to_send, **params)
+            None, lambda: self.client.chat.completions.create(model=deployment_name, **params)
         )
-        
+        # Logging of system prompt, user message and response content
+        logger = logging.getLogger(__name__)
+        # For debugging, let's log the actual deployment name used
+        logger.debug(f"API call with deployment_name: {deployment_name}")
         logger.debug(f"API parameters: {params}")
         logger.debug(f"API response: {response.choices[0].message.content}")
         return response.choices[0].message.content
-

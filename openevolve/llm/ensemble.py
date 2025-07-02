@@ -16,12 +16,32 @@ logger = logging.getLogger(__name__)
 
 
 def create_llm(config: LLMModelConfig) -> LLMInterface:
-    """Create an LLM instance based on the model name"""
+    """
+    Factory function to create an LLM instance based on the model name prefix.
+    This function ensures that models with specific prefixes are routed to the
+    correct handler class to manage their unique API requirements.
+    """
+    # Ensure model_name is a clean string, stripping any leading/trailing whitespace
+    model_name = config.name.strip()
     
-    model = config.name
-    if 'azure' in model:
+    # Route to the Azure-specific class if the name starts with "azure/"
+    # This class correctly handles the api_version and deployment name logic.
+    if model_name.startswith("azure/"):
+        logger.debug(f"Routing to AzureOpenAILLM for model: {model_name}")
         return AzureOpenAILLM(config)
+    
+    # Route to the standard OpenAI class for other hosted models.
+    # This class is suitable for endpoints that follow the standard OpenAI API spec.
+    elif model_name.startswith("hosted_vllm/"):
+        logger.debug(f"Routing to OpenAILLM for hosted vLLM model: {model_name}")
+        return OpenAILLM(config)
+        
+    # Default to the standard OpenAILLM for any other case (e.g., direct "gpt-4o").
+    # NOTE: The error log indicates this path was likely taken, suggesting a
+    # mismatch between the model name and the previous routing logic. This
+    # updated function should resolve that.
     else:
+        logger.debug(f"Routing to default OpenAILLM for model: {model_name}")
         return OpenAILLM(config)
 
 
